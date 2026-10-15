@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cüzdan Takip ve Sanal İşlem Paneli</title>
+<style>
+:root{--bg:#0f1419;--sf:#171d26;--ln:#2a3342;--tx:#e6e9ef;--mu:#8b95a7;--gn:#4fd1b5;--ls:#ff7a6b;--ac:#f2b84b;color-scheme:dark}
+@media (prefers-color-scheme:light){:root{--bg:#f3f4f6;--sf:#fff;--ln:#d9dde4;--tx:#1b2230;--mu:#5d6778;--gn:#0b8f77;--ls:#c9402f;--ac:#a86f00;color-scheme:light}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:0 0 10px}
+.sub,.foot{color:var(--mu);font-size:14px}.sub{margin:0 0 16px;max-width:70ch}
+.box{background:var(--sf);border:1px solid var(--ln);border-radius:8px;padding:16px;margin-bottom:16px}
+textarea{width:100%;min-height:90px;background:var(--bg);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:8px;font:13px ui-monospace,monospace}
+button{font:inherit;background:var(--sf);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:6px 14px;cursor:pointer}
+button.p{background:var(--ac);border-color:var(--ac);color:#1b1500;font-weight:600}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.ctl label{display:block;font-size:13px;color:var(--mu)}
+.ctl input{width:100%;margin-top:3px;background:var(--bg);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:6px}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.sum div{border-left:3px solid var(--ln);padding-left:10px}.sum span{display:block;font-size:12px;color:var(--mu)}
+.sum strong{font-size:21px;font-variant-numeric:tabular-nums}
+.sc{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--ln);white-space:nowrap}
+th{color:var(--mu);font-weight:600;font-size:13px}.n{text-align:right}
+.g{color:var(--gn)}.l{color:var(--ls)}.m{color:var(--mu)}
+.err{color:var(--ls);font-size:14px;margin:8px 0 0}
+input[type=checkbox]{accent-color:var(--ac);width:16px;height:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Cüzdan takip ve sanal işlem paneli</h1>
+<p class="sub">Cüzdanları puanla, seçtiklerini takip et. Takip edilen cüzdan 24 saatten yeni bir coin alınca sanal pozisyon açılır. Gerçek para ve cüzdan bağlantısı yoktur.</p>
+
+<section class="box">
+<h2>1. Cüzdan adresleri</h2>
+<textarea id="addrs" placeholder="Solana cüzdan adreslerini yapıştır (her satıra bir tane, en fazla 10)"></textarea>
+<div class="row"><button class="p" id="analyze">Analiz et</button><span class="foot" id="astat"></span></div>
+<div class="sc" style="margin-top:10px"><table id="wt"></table></div>
+</section>
+
+<section class="box">
+<h2>2. Sanal işlem kuralları</h2>
+<div class="ctl" id="ctl"></div>
+<div class="row"><button class="p" id="toggle">Takibi başlat</button><button id="reset">Pozisyonları sıfırla</button><span class="foot" id="rstat"></span></div>
+<p class="foot" style="margin-bottom:0">Takip yalnızca bu sayfa açıkken çalışır. Kapatırsan duraklar; açınca kaldığı yerden devam eder.</p>
+<p class="err" id="err"></p>
+</section>
+
+<section class="box"><h2>Sonuç özeti</h2><div class="sum" id="sum"></div></section>
+<section class="box"><h2>Açık pozisyonlar</h2><div class="sc"><table id="ot"></table></div></section>
+<section class="box"><h2>Kapanan pozisyonlar</h2><div class="sc"><table id="ct"></table></div></section>
+<p class="foot">Giriş fiyatı, sinyali yakaladığımız andaki piyasa fiyatıdır; cüzdanın kendi fiyatından daha kötüdür. Bu, gerçeğe daha yakın sonuç verir.</p>
+</div>
+<script>
+var LS='pwa_v1',S={wallets:[],scores:{},track:{},cfg:{amt:10,tp:50,sl:40,hold:24,slip:3,fee:1},pos:[],seen:[],run:false,startedAt:0},timer=null;
+try{var raw=localStorage.getItem(LS);if(raw){var o=JSON.parse(raw);for(var k in o)S[k]=o[k]}}catch(e){}
+function save(){try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}}
+function $(i){return document.getElementById(i)}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function usd(x){return(x<0?'-':'+')+'$'+Math.abs(x).toFixed(2)}
+function cls(x){return x>=0?'g':'l'}
+function short(a){return a.slice(0,4)+'…'+a.slice(-4)}
+async function api(action,params){
+ var q=new URLSearchParams(Object.assign({action:action},params)).toString();
+ var r=await fetch('/api/data?'+q),j=await r.json();
+ if(!r.ok)throw new Error(j.error||('Hata '+r.status));return j}
+
+var CFG=[['amt','Yatırım (USD)'],['tp','Kâr hedefi (%)'],['sl','Zarar durdurma (%)'],['hold','Azami bekleme (saat)'],['slip','Kayma (%, her yön)'],['fee','Ücret (%, her yön)']];
+CFG.forEach(function(c){var d=document.createElement('div');d.innerHTML='<label>'+c[1]+'<input type="number" step="any" min="0" id="c_'+c[0]+'" value="'+S.cfg[c[0]]+'"></label>';$('ctl').appendChild(d);
+ d.querySelector('input').addEventListener('change',function(e){var v=parseFloat(e.target.value);if(v>=0){S.cfg[c[0]]=v;save()}})});
+$('addrs').value=S.wallets.join('\n');
+
+$('analyze').onclick=async function(){
+ var list=$('addrs').value.split(/[\s,]+/).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i}).slice(0,10);
+ S.wallets=list;$('err').textContent='';
+ for(var i=0;i<list.length;i++){
+  $('astat').textContent='Analiz ediliyor '+(i+1)+'/'+list.length+'…';
+  try{var r=await api('wallet',{address:list[i]});S.scores[list[i]]=r.stats;if(S.track[list[i]]===undefined)S.track[list[i]]=r.stats.score>=60}
+  catch(e){S.scores[list[i]]={error:e.message}}
+  save();renderW()}
+ $('astat').textContent='Bitti.'};
+function renderW(){
+ var h='<tr><th>Takip</th><th>Cüzdan</th><th class="n">Puan</th><th class="n">Net kâr (SOL)</th><th class="n">Kapanan</th><th class="n">Kazanma</th><th class="n">Tek coin payı</th><th class="n">Sniper</th></tr>';
+ S.wallets.forEach(function(a){var s=S.scores[a];
+  if(!s){h+='<tr><td></td><td>'+short(a)+'</td><td colspan="6" class="m">Henüz analiz edilmedi</td></tr>';return}
+  if(s.error){h+='<tr><td></td><td>'+short(a)+'</td><td colspan="6" class="l">'+esc(s.error)+'</td></tr>';return}
+  h+='<tr><td><input type="checkbox" data-a="'+a+'"'+(S.track[a]?' checked':'')+' aria-label="Takip et"></td><td>'+short(a)+'</td><td class="n"><b>'+s.score+'</b></td><td class="n '+cls(s.pnl)+'">'+s.pnl.toFixed(2)+'</td><td class="n">'+s.closed+'</td><td class="n">%'+Math.round(s.winRate*100)+'</td><td class="n">%'+Math.round(s.bestShare*100)+'</td><td class="n">%'+Math.round(s.sniperShare*100)+'</td></tr>'});
+ $('wt').innerHTML=h}
+$('wt').addEventListener('change',function(e){var a=e.target.getAttribute('data-a');if(a){S.track[a]=e.target.checked;save()}});
+
+async function poll(){
+ var tr=S.wallets.filter(function(a){return S.track[a]});
+ if(!tr.length){$('rstat').textContent='Takip edilen cüzdan yok.';return}
+ try{
+  $('err').textContent='';
+  var sg=(await api('signals',{addresses:tr.join(',')})).signals;
+  var fresh=sg.filter(function(s){return S.seen.indexOf(s.sig)<0&&s.ts>=S.startedAt/1000-120});
+  sg.forEach(function(s){if(S.seen.indexOf(s.sig)<0)S.seen.push(s.sig)});S.seen=S.seen.slice(-600);
+  var open=S.pos.filter(function(p){return p.status==='open'});
+  var mints=fresh.map(function(s){return s.mint}).concat(open.map(function(p){return p.mint}));
+  var pr=mints.length?await api('prices',{mints:mints.filter(function(v,i,a){return a.indexOf(v)===i}).join(',')}):{};
+  var now=Date.now(),c=S.cfg;
+  fresh.forEach(function(s){var i=pr[s.mint];
+   if(!i||!i.price||!i.created)return;
+   if((now-i.created)/3.6e6>24||i.liq<5000)return;
+   if(S.pos.some(function(p){return p.mint===s.mint&&p.status==='open'}))return;
+   S.pos.push({id:s.sig,mint:s.mint,sym:i.symbol||'?',wallet:s.wallet,entry:i.price*(1+c.slip/100),openedAt:now,status:'open',miss:0,last:i.price})});
+  S.pos.forEach(function(p){if(p.status!=='open')return;var i=pr[p.mint],reason=null,exit=null;
+   if(!i||!i.price){p.miss++;if(p.miss>=3){reason='Veri yok';exit=0}}
+   else{p.miss=0;p.last=i.price;
+    if(i.price>=p.entry*(1+c.tp/100)){reason='Kâr hedefi';exit=i.price}
+    else if(i.price<=p.entry*(1-c.sl/100)){reason='Zarar durdu';exit=i.price}
+    else if((now-p.openedAt)/3.6e6>=c.hold){reason='Süre doldu';exit=i.price}}
+   if(reason){var gross=c.amt*((exit*(1-c.slip/100))/p.entry);p.pnl=gross-c.amt-c.amt*c.fee/100-gross*c.fee/100;p.status='closed';p.reason=reason;p.closedAt=now}});
+  save();$('rstat').textContent='Son kontrol: '+new Date().toLocaleTimeString('tr-TR');render()
+ }catch(e){$('err').textContent=e.message}}
+
+function render(){
+ var cl=S.pos.filter(function(p){return p.status==='closed'}),op=S.pos.filter(function(p){return p.status==='open'}),c=S.cfg;
+ var pnl=0,tp=0,sl=0;cl.forEach(function(p){pnl+=p.pnl;if(p.reason==='Kâr hedefi')tp++;else sl++});
+ var unreal=0;op.forEach(function(p){var g=c.amt*((p.last*(1-c.slip/100))/p.entry);unreal+=g-c.amt});
+ $('sum').innerHTML='<div><span>Kapanan net kâr/zarar</span><strong class="'+cls(pnl)+'">'+usd(pnl)+'</strong></div><div><span>Açık (anlık)</span><strong class="'+cls(unreal)+'">'+usd(unreal)+'</strong></div><div><span>Açık pozisyon</span><strong>'+op.length+'</strong></div><div><span>Hedefe ulaşan</span><strong class="g">'+tp+'</strong></div><div><span>Diğer çıkışlar</span><strong class="l">'+sl+'</strong></div>';
+ var h='<tr><th>Coin</th><th>Cüzdan</th><th>Açılış</th><th class="n">Giriş ($)</th><th class="n">Şimdi ($)</th><th class="n">Değişim</th></tr>';
+ op.slice().reverse().forEach(function(p){var ch=(p.last/p.entry-1)*100;h+='<tr><td>'+esc(p.sym)+'</td><td>'+short(p.wallet)+'</td><td class="m">'+new Date(p.openedAt).toLocaleTimeString('tr-TR')+'</td><td class="n">'+p.entry.toPrecision(4)+'</td><td class="n">'+p.last.toPrecision(4)+'</td><td class="n '+cls(ch)+'">%'+ch.toFixed(1)+'</td></tr>'});
+ if(!op.length)h+='<tr><td colspan="6" class="m">Açık pozisyon yok. Takip edilen cüzdan yeni bir coin alınca burada görünür.</td></tr>';
+ $('ot').innerHTML=h;
+ h='<tr><th>Coin</th><th>Cüzdan</th><th>Sonuç</th><th class="n">Net</th></tr>';
+ cl.slice().reverse().slice(0,30).forEach(function(p){h+='<tr><td>'+esc(p.sym)+'</td><td>'+short(p.wallet)+'</td><td>'+p.reason+'</td><td class="n '+cls(p.pnl)+'">'+usd(p.pnl)+'</td></tr>'});
+ if(!cl.length)h+='<tr><td colspan="4" class="m">Henüz kapanan pozisyon yok.</td></tr>';
+ $('ct').innerHTML=h}
+
+function setRun(on){S.run=on;$('toggle').textContent=on?'Takibi durdur':'Takibi başlat';clearInterval(timer);
+ if(on){if(!S.startedAt||!timer)S.startedAt=Date.now();poll();timer=setInterval(poll,45000)}save()}
+$('toggle').onclick=function(){setRun(!S.run)};
+$('reset').onclick=function(){if(confirm('Tüm sanal pozisyonlar silinsin mi?')){S.pos=[];S.seen=[];save();render()}};
+renderW();render();if(S.run){S.startedAt=Date.now();setRun(true)}
+</script>
+</body>
+</html>
