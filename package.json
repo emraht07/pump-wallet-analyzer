@@ -1,0 +1,6 @@
+{
+  "name": "pump-wallet-analyzer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pump.fun cüzdan analizi ve sanal işlem simülasyonu"
+}
